@@ -185,9 +185,13 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
 def gerar_vetores(
     cliente_gemini: genai.Client, textos: list[str], dimensao_vetor: int
 ) -> list[list[float]]:
+    conteudos = [
+        types.Content(parts=[types.Part.from_text(text=texto)])
+        for texto in textos
+    ]
     resposta = cliente_gemini.models.embed_content(
-        model=os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2-preview"),
-        contents=textos,
+        model=os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2"),
+        contents=conteudos,
         config=types.EmbedContentConfig(output_dimensionality=dimensao_vetor),
     )
     vetores = [list(item.values) for item in resposta.embeddings or []]
