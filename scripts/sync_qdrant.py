@@ -9,8 +9,7 @@ from typing import Any
 
 import redis
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from openai import OpenAI
 from psycopg import connect
 from psycopg.rows import dict_row
 from qdrant_client import QdrantClient, models as modelos_qdrant
@@ -183,17 +182,20 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
 
 
 def gerar_vetores(
-    cliente_gemini: genai.Client, textos: list[str], dimensao_vetor: int
+    cliente_openai: OpenAI, textos: list[str], dimensao_vetor: int
 ) -> list[list[float]]:
-    resposta = cliente_gemini.models.embed_content(
-        model=os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2-preview"),
-        contents=textos,
-        config=types.EmbedContentConfig(output_dimensionality=dimensao_vetor),
+    resposta = cliente_openai.embeddings.create(
+        model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        input=textos,
+        dimensions=dimensao_vetor,
     )
-    vetores = [list(item.values) for item in resposta.embeddings or []]
+    vetores = [
+        item.embedding
+        for item in sorted(resposta.data, key=lambda item: item.index)
+    ]
     if len(vetores) != len(textos):
         raise RuntimeError(
-            f"O Gemini retornou {len(vetores)} vetores para {len(textos)} textos"
+            f"A OpenAI retornou {len(vetores)} vetores para {len(textos)} textos"
         )
     return vetores
 
@@ -201,7 +203,7 @@ def gerar_vetores(
 def sincronizar_colecao(
     conexao_pg: Any,
     cliente_qdrant: QdrantClient,
-    cliente_gemini: genai.Client,
+    cliente_openai: OpenAI,
     nome_colecao: str,
     alterado_desde: datetime | None,
     dimensao_vetor: int,
@@ -212,7 +214,7 @@ def sincronizar_colecao(
     for inicio in range(0, len(registros), tamanho_lote):
         lote = registros[inicio : inicio + tamanho_lote]
         textos = [str(registro["texto"] or registro["id"]) for registro in lote]
-        vetores = gerar_vetores(cliente_gemini, textos, dimensao_vetor)
+        vetores = gerar_vetores(cliente_openai, textos, dimensao_vetor)
         pontos: list[modelos_qdrant.PointStruct] = []
         for registro, vetor in zip(lote, vetores, strict=True):
             carga: dict[str, Any] = {
@@ -286,11 +288,14 @@ def executar() -> int:
 
     url_banco = obter_variavel_obrigatoria("DATABASE_URL")
     url_redis = obter_variavel_obrigatoria("REDIS_URL")
-    chave_gemini = obter_variavel_obrigatoria("GEMINI_API_KEY")
+    chave_openai = obter_variavel_obrigatoria("OPENAI_API_KEY")
     sobreposicao_minutos = int(os.getenv("SYNC_OVERLAP_MINUTES", "20"))
     tamanho_lote = int(os.getenv("SYNC_BATCH_SIZE", "32"))
     validade_trava = int(os.getenv("SYNC_LOCK_TTL_SECONDS", "3600"))
-    chave_cursor = os.getenv("REDIS_CURSOR_KEY", "qdrant_sync:cursor")
+    modelo_embedding = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    chave_cursor = os.getenv(
+        "REDIS_CURSOR_KEY", f"qdrant_sync:cursor:openai:{modelo_embedding}"
+    )
     chave_trava = os.getenv("REDIS_LOCK_KEY", "qdrant_sync:lock")
 
     cliente_redis = redis.Redis.from_url(
@@ -333,7 +338,7 @@ def executar() -> int:
             api_key=chave_qdrant,
             timeout=tempo_limite_qdrant,
         )
-        cliente_gemini = genai.Client(api_key=chave_gemini)
+        cliente_openai = OpenAI(api_key=chave_openai)
         try:
             preparar_colecoes(cliente_qdrant, dimensao_vetor)
             total_enviado = 0
@@ -341,7 +346,7 @@ def executar() -> int:
                 total_enviado += sincronizar_colecao(
                     conexao_pg,
                     cliente_qdrant,
-                    cliente_gemini,
+                    cliente_openai,
                     nome_colecao,
                     alterado_desde,
                     dimensao_vetor,
@@ -358,7 +363,7 @@ def executar() -> int:
         finally:
             conexao_pg.close()
             cliente_qdrant.close()
-            cliente_gemini.close()
+            cliente_openai.close()
         return 0
     finally:
         liberar_trava(cliente_redis, chave_trava, identificador_trava)
