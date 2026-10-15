@@ -36,5 +36,5 @@ jobs:
           REDIS_URL: ${{ secrets.REDIS_URL }}
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_EMBEDDING_MODEL: gemini-embedding-2
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_EMBEDDING_MODEL: text-embedding-3-small
