@@ -316,6 +316,10 @@ def executar() -> int:
     try:
         conexao_pg = connect(url_banco, row_factory=dict_row)
         with conexao_pg.cursor() as cursor:
+            cursor.execute("SET TIME ZONE 'America/Sao_Paulo'")
+            cursor.execute("SHOW TIME ZONE")
+            fuso_banco = cursor.fetchone()["TimeZone"]
+            REGISTRO.info("Fuso da sessão PostgreSQL: %s", fuso_banco)
             cursor.execute("SELECT clock_timestamp() AS agora")
             inicio_execucao = cursor.fetchone()["agora"]
         conexao_pg.commit()
