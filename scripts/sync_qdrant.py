@@ -27,70 +27,70 @@ COLECOES = (
     "modelo_equipamento",
     "categoria_equipamento",
     "marca_equipamento",
-    "local_endereco",
+    "local_unidade",
 )
 CONSULTAS: dict[str, tuple[str, str]] = {
     "problema": (
-        """SELECT p.id, le.unidade_id,
+        """SELECT p.id, lu.unidade_id,
                   COALESCE(NULLIF(BTRIM(p.descricao_problema), ''), p.titulo) AS texto,
                   p.esta_ativo
            FROM problema p
-           JOIN local_endereco le ON le.id = p.local_endereco_id""",
-        "p.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+           JOIN local_unidade lu ON lu.id = p.local_unidade_id""",
+        "p.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "ocorrencia": (
-        """SELECT o.id, le.unidade_id,
+        """SELECT o.id, lu.unidade_id,
                   COALESCE(NULLIF(BTRIM(o.descricao_ocorrencia), ''), o.titulo) AS texto,
                   o.esta_ativo
            FROM ocorrencia o
-           JOIN local_endereco le ON le.id = o.local_endereco_id""",
-        "o.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+           JOIN local_unidade lu ON lu.id = o.local_unidade_id""",
+        "o.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "ordem_servico": (
-        """SELECT os.id, le.unidade_id,
+        """SELECT os.id, lu.unidade_id,
                   COALESCE(NULLIF(BTRIM(p.descricao_problema), ''), p.titulo) AS texto,
                   os.esta_ativo
            FROM ordem_servico os
            JOIN problema p ON p.id = os.problema_id
-           JOIN local_endereco le ON le.id = p.local_endereco_id""",
-        "os.data_atualizacao >= %s OR p.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+           JOIN local_unidade lu ON lu.id = p.local_unidade_id""",
+        "os.data_atualizacao >= %s OR p.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "tarefa": (
-        """SELECT t.id, le.unidade_id,
+        """SELECT t.id, lu.unidade_id,
                   COALESCE(NULLIF(BTRIM(t.descricao), ''), t.titulo) AS texto,
                   t.esta_ativo
            FROM tarefa t
            JOIN ordem_servico os ON os.id = t.ordem_servico_id
            JOIN problema p ON p.id = os.problema_id
-           JOIN local_endereco le ON le.id = p.local_endereco_id""",
+           JOIN local_unidade lu ON lu.id = p.local_unidade_id""",
         "t.data_atualizacao >= %s OR os.data_atualizacao >= %s OR "
-        "p.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+        "p.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "observacao_conclusao": (
-        """SELECT oc.id, le.unidade_id, oc.observacao AS texto, oc.esta_ativo
+        """SELECT oc.id, lu.unidade_id, oc.observacao AS texto, oc.esta_ativo
            FROM observacao_conclusao oc
            JOIN ordem_servico os ON os.id = oc.ordem_servico_id
            JOIN problema p ON p.id = os.problema_id
-           JOIN local_endereco le ON le.id = p.local_endereco_id""",
+           JOIN local_unidade lu ON lu.id = p.local_unidade_id""",
         "oc.data_atualizacao >= %s OR os.data_atualizacao >= %s OR "
-        "p.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+        "p.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "evento": (
-        """SELECT e.id, le.unidade_id,
+        """SELECT e.id, lu.unidade_id,
                   COALESCE(NULLIF(BTRIM(e.descricao), ''), e.titulo) AS texto,
                   e.esta_ativo
            FROM evento e
-           JOIN local_endereco le ON le.id = e.local_endereco_id""",
-        "e.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+           JOIN local_unidade lu ON lu.id = e.local_unidade_id""",
+        "e.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "equipamento": (
-        """SELECT eq.id, le.unidade_id,
-                  COALESCE(NULLIF(BTRIM(CONCAT_WS(' ', me.descricao, le.descricao)), ''), eq.codigo) AS texto,
+        """SELECT eq.id, lu.unidade_id,
+                  COALESCE(NULLIF(BTRIM(CONCAT_WS(' ', me.descricao, lu.descricao)), ''), eq.codigo) AS texto,
                   eq.esta_ativo
            FROM equipamento eq
            JOIN modelo_equipamento me ON me.id = eq.modelo_equipamento_id
-           JOIN local_endereco le ON le.id = eq.local_endereco_id""",
-        "eq.data_atualizacao >= %s OR me.data_atualizacao >= %s OR le.data_atualizacao >= %s",
+           JOIN local_unidade lu ON lu.id = eq.local_unidade_id""",
+        "eq.data_atualizacao >= %s OR me.data_atualizacao >= %s OR lu.data_atualizacao >= %s",
     ),
     "modelo_equipamento": (
         """SELECT me.id, u.unidade_id,
@@ -115,10 +115,10 @@ CONSULTAS: dict[str, tuple[str, str]] = {
            FROM marca_equipamento m""",
         "m.data_atualizacao >= %s",
     ),
-    "local_endereco": (
-        """SELECT le.id, le.unidade_id, le.descricao AS texto, le.esta_ativo
-           FROM local_endereco le""",
-        "le.data_atualizacao >= %s",
+    "local_unidade": (
+        """SELECT lu.id, lu.unidade_id, lu.descricao AS texto, lu.esta_ativo
+           FROM local_unidade lu""",
+        "lu.data_atualizacao >= %s",
     ),
 }
 
@@ -149,9 +149,9 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
     nomes_existentes = {item.name for item in cliente.get_collections().collections}
     for nome_colecao in COLECOES:
         if nome_colecao not in nomes_existentes:
-            if nome_colecao == "local_endereco":
+            if nome_colecao == "local_unidade":
                 raise RuntimeError(
-                    "A collection local_endereco precisa existir antes da sincronização; "
+                    "A collection local_unidade precisa existir antes da sincronização; "
                     "o worker não a cria"
                 )
             cliente.create_collection(
