@@ -149,11 +149,6 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
     nomes_existentes = {item.name for item in cliente.get_collections().collections}
     for nome_colecao in COLECOES:
         if nome_colecao not in nomes_existentes:
-            if nome_colecao == "local_unidade":
-                raise RuntimeError(
-                    "A collection local_unidade precisa existir antes da sincronização; "
-                    "o worker não a cria"
-                )
             cliente.create_collection(
                 collection_name=nome_colecao,
                 vectors_config=modelos_qdrant.VectorParams(
@@ -162,7 +157,6 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
                 ),
             )
             REGISTRO.info("Collection criada: %s", nome_colecao)
-            continue
 
         informacoes = cliente.get_collection(collection_name=nome_colecao)
         configuracao_vetores = informacoes.config.params.vectors
@@ -178,6 +172,39 @@ def preparar_colecoes(cliente: QdrantClient, dimensao_vetor: int) -> None:
         if configuracao_vetores.distance != modelos_qdrant.Distance.COSINE:
             raise RuntimeError(
                 f"A collection {nome_colecao} precisa usar similaridade Cosine"
+            )
+
+        indice_ativo = informacoes.payload_schema.get("esta_ativo")
+        if indice_ativo is None:
+            cliente.create_payload_index(
+                collection_name=nome_colecao,
+                field_name="esta_ativo",
+                field_schema=modelos_qdrant.PayloadSchemaType.BOOL,
+                wait=True,
+            )
+            REGISTRO.info("Índice de esta_ativo criado: %s", nome_colecao)
+        elif indice_ativo.data_type != modelos_qdrant.PayloadSchemaType.BOOL:
+            raise RuntimeError(
+                f"A collection {nome_colecao} tem índice esta_ativo do tipo "
+                f"{indice_ativo.data_type}; o worker espera bool"
+            )
+
+        if nome_colecao == "marca_equipamento":
+            continue
+
+        indice_unidade = informacoes.payload_schema.get("unidade_id")
+        if indice_unidade is None:
+            cliente.create_payload_index(
+                collection_name=nome_colecao,
+                field_name="unidade_id",
+                field_schema=modelos_qdrant.PayloadSchemaType.INTEGER,
+                wait=True,
+            )
+            REGISTRO.info("Índice de unidade_id criado: %s", nome_colecao)
+        elif indice_unidade.data_type != modelos_qdrant.PayloadSchemaType.INTEGER:
+            raise RuntimeError(
+                f"A collection {nome_colecao} tem índice unidade_id do tipo "
+                f"{indice_unidade.data_type}; o worker espera integer"
             )
 
 
@@ -259,6 +286,11 @@ def executar() -> int:
         action="store_true",
         help="Cria e valida collections sem sincronizar registros",
     )
+    analisador.add_argument(
+        "--carga-completa",
+        action="store_true",
+        help="Ignora o cursor do Redis e sincroniza todos os registros",
+    )
     argumentos = analisador.parse_args()
 
     logging.basicConfig(
@@ -325,8 +357,13 @@ def executar() -> int:
         conexao_pg.commit()
         conexao_pg.autocommit = True
 
-        valor_cursor = cliente_redis.get(chave_cursor)
-        if valor_cursor:
+        valor_cursor = (
+            None if argumentos.carga_completa else cliente_redis.get(chave_cursor)
+        )
+        if argumentos.carga_completa:
+            alterado_desde = None
+            REGISTRO.info("Carga completa solicitada; ignorando cursor do Redis")
+        elif valor_cursor:
             cursor = datetime.fromisoformat(valor_cursor.replace("Z", "+00:00"))
             alterado_desde = cursor - timedelta(minutes=sobreposicao_minutos)
             REGISTRO.info(
